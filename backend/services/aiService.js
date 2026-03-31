@@ -58,7 +58,7 @@ const generateBotReply = async (userMessage) => {
         }
 
         const hasSearchTrigger = responseText.includes('[TARGET:');
-
+        
         if (hasSearchTrigger) {
             const dateMatch = responseText.match(/\[DATE:\s*([^\]]+)\]/i);
             const nameMatch = responseText.match(/\[NAME:\s*([^\]]+)\]/i);
@@ -91,7 +91,7 @@ const generateBotReply = async (userMessage) => {
 
             if (events && events.length > 0) {
                 // Sort by date
-                events.sort((a, b) => {
+                events.sort((a,b) => {
                     const d1 = a.date.split(' ')[0].split('.').reverse().join('');
                     const d2 = b.date.split(' ')[0].split('.').reverse().join('');
                     return d1.localeCompare(d2);
@@ -101,12 +101,8 @@ const generateBotReply = async (userMessage) => {
                 events.forEach(e => {
                     msg += `⭐ *${e.title}*\n📅 Tarix: ${e.date}\n💰 Qiymət: ${e.price}\n\n`;
                 });
-                if (events.length === 1) {
-                    msg += "Bileti haradan almaq istəyirsiniz — iTicket yoxsa Musiqili Teatrın kassasından? 🎟️";
-                } else {
-                    msg += "Hansı tamaşa üçün bilet almaq istəyirsiniz? 🎟️";
-                }
-
+                msg += "Hansı tamaşa üçün bilet almaq istəyirsiniz? 🎟️";
+                
                 // We'll pass the events to the caller so they can be saved in the session
                 return { text: msg, events: events };
             } else {

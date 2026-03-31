@@ -30,10 +30,10 @@ const runPendingCampaigns = async () => {
                     }
                     camp.progress.sent += 1;
                 } catch (err) {
-                    console.error(`Gønderme xetasi [${phone}]: ${err.message}`);
+                    console.error(`Göndərilmə xətası [${phone}]: ${err.message}`);
                     camp.progress.failed += 1;
                 }
-                
+
                 // Random delay between 3 and 8 seconds to prevent ban
                 const delayMs = Math.floor(Math.random() * 5000) + 3000;
                 await sleep(delayMs);
