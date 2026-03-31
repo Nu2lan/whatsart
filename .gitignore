@@ -1,0 +1,13 @@
+# Monorepo root gitignore
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+
+# Logs at any level
+*.log
+*.log.old

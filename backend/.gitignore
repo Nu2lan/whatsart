@@ -1,0 +1,23 @@
+# WhatsApp Session & Cache
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Uploaded media files
+uploads/
+
+# Temp files
+tmp/
+
+# Logs
+*.log
+*.log.old
+
+# Environment variables — NEVER commit
+.env
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
