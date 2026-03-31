@@ -41,6 +41,11 @@ const { startCampaignRunner } = require('./services/campaignRunner');
 initializeWhatsApp();
 startCampaignRunner();
 
+// Health check endpoint for Railway (always returns 200)
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok' });
+});
+
 // In production, serve the built frontend
 const path = require('path');
 if (process.env.NODE_ENV === 'production') {
