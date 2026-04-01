@@ -1,4 +1,4 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { Client, RemoteAuth, MessageMedia } = require('whatsapp-web.js');
 const { generateBotReply } = require('./aiService');
 const SessionManager = require('./SessionManager');
 const Message = require('../models/Message');
@@ -6,6 +6,8 @@ const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
 const { log } = require('./logger');
+const { MongoStore } = require('wwebjs-mongo');
+const mongoose = require('mongoose');
 
 const statusEmitter = new EventEmitter();
 
@@ -35,8 +37,22 @@ const initializeWhatsApp = async () => {
     if (initializationLock) return;
     initializationLock = true;
     try {
+        // Wait for mongoose connection to be ready
+        if (mongoose.connection.readyState !== 1) {
+            await new Promise((resolve) => {
+                mongoose.connection.once('connected', resolve);
+                // If already connecting, also handle open state
+                if (mongoose.connection.readyState === 1) resolve();
+            });
+        }
+
+        const store = new MongoStore({ mongoose });
+
         client = new Client({
-            authStrategy: new LocalAuth(),
+            authStrategy: new RemoteAuth({
+                store,
+                backupSyncIntervalMs: 300000, // Sync session to MongoDB every 5 minutes
+            }),
             puppeteer: {
                 args: [
                     '--no-sandbox',
@@ -87,6 +103,10 @@ const initializeWhatsApp = async () => {
             currentQR = '';
             broadcastStatus();
         }
+    });
+
+    client.on('remote_session_saved', () => {
+        console.log('✅ WhatsApp session saved to MongoDB (will survive redeployments)');
     });
 
     client.on('loading_screen', (percent, message) => {
