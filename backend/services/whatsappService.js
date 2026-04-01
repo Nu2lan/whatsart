@@ -269,11 +269,18 @@ const initializeWhatsApp = async () => {
 
                 // STEP 2: Handle Event Selection from List
                 if (!skipAI && session.lastEvents && session.lastEvents.length > 0) {
-                    // Check if user mentioned one of the show titles
-                    const matchedEvent = session.lastEvents.find(e =>
-                        cleanMsg.includes(e.title.toLowerCase()) ||
-                        (e.title.toLowerCase().split(' ').some(word => word.length > 3 && cleanMsg.includes(word)))
-                    );
+                    // Clean title for comparison (remove quotes and special chars)
+                    const cleanTitle = (t) => t.toLowerCase().replace(/["""''«»]/g, '').trim();
+                    const matchedEvent = session.lastEvents.find(e => {
+                        const title = cleanTitle(e.title);
+                        // Full title match
+                        if (cleanMsg.includes(title)) return true;
+                        // Any word from title (3+ chars) found in user message
+                        if (title.split(/[\s\-]+/).some(word => word.length > 2 && cleanMsg.includes(word))) return true;
+                        // Any word from user message (3+ chars) found in title
+                        if (cleanMsg.split(/[\s\-]+/).some(word => word.length > 2 && title.includes(word))) return true;
+                        return false;
+                    });
 
                     if (matchedEvent) {
                         SessionManager.update(realSender, {
