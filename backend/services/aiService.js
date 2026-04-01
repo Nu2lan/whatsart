@@ -25,14 +25,16 @@ Qaydalar:
 1. YALNIZ Musiqili Teatrın tamaşaları və teatrın özü haqqında suallara cavab verin.
 2. Tamaşaların siyahısını təqdim edərkən HEÇ VAXT bilet linklərini (iTicket linklərini) birbaşa göndərməyin.
 3. Siyahı göstərdikdən sonra mütləq soruşun: "Hansı tamaşa üçün bilet almaq istəyirsiniz?"
-4. Əgər istifadəçi aprel, may və ya digər aylar üçün ümumi tamaşaları soruşursa, MUTLƏQ axtarış teqlərindən istifadə edərək onlara siyahını təqdim edin.
-5. Kənar mövzular (digər teatrlar, konsertlər) haqqında soruşularsa, nəzakətlə bildirin ki, siz yalnız Musiqili Teatr üzrə ixtisaslaşmısınız.
+4. Kənar mövzular (digər teatrlar, konsertlər) haqqında soruşularsa, nəzakətlə bildirin ki, siz yalnız Musiqili Teatr üzrə ixtisaslaşmısınız.
 
-Tədbir/Tamaşa axtarışı edərkən (tamaşa adı, bilet, qiymət, tarix, konkret AY soruşulduqda) mesajın başında bu teqləri istifadə edin:
+ÇOX VACİB: Siz tamaşa adlarını, tarixləri və qiymətləri özünüz UYDURMAMALISINIZ. HEÇ VAXT öz biliklərinizə əsasən tamaşa siyahısı yaratmayın.
+Bunun əvəzinə, tamaşa/tədbir/bilet/tarix/ay haqqında sual olduqda YALNIZ aşağıdakı axtarış teqlərini yazın və dayandırın:
 [TARGET: musical_theatre_venue] [DATE: DD.MM] [NAME: tamasa_adi]
 - TARGET: Həmişə "musical_theatre_venue" olaraq saxlayın.
 - DATE: Əgər konkret tarix varsa DD.MM, əgər yalnız AY soruşulursa onu .MM formatında (məs: .04) qeyd edin.
-- NAME: Tamaşanın adını qeyd edin.`;
+- NAME: Tamaşanın adını qeyd edin, yoxdursa yazmayın.
+
+Teqlərdən sonra HEÇ BİR tamaşa siyahısı, ad və ya tarix yazmayın. Sistem avtomatik olaraq real məlumatları tapacaq.`;
 
 const generateBotReply = async (userMessage) => {
     try {
@@ -43,14 +45,14 @@ const generateBotReply = async (userMessage) => {
                 { role: "system", content: systemInstruction },
                 { role: "user", content: userMessage }
             ],
-            temperature: 0.5,
+            temperature: 0.3,
         });
 
         let responseText = response.choices[0].message.content;
         log('AI RAW', `${responseText}`);
 
         // Force a search if the user asks for events without specific tags
-        const searchKeywords = ['aprel', 'may', 'tamaşa', 'tədbir', 'nə var', 'nə vaxt'];
+        const searchKeywords = ['aprel', 'may', 'iyun', 'iyul', 'avqust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr', 'yanvar', 'fevral', 'mart', 'tamaşa', 'tədbir', 'nə var', 'nə vaxt', 'bilet', 'seans', 'konsert', 'qiymət', 'bu ay', 'gələn ay', 'gelen ay'];
         const needsSearch = searchKeywords.some(kw => userMessage.toLowerCase().includes(kw));
 
         if (!responseText.includes('[TARGET:') && needsSearch) {
@@ -66,9 +68,33 @@ const generateBotReply = async (userMessage) => {
             let dateFilter = dateMatch ? dateMatch[1].trim() : null;
             const nameFilter = nameMatch ? nameMatch[1].trim().toLowerCase() : null;
 
-            // Simple date extraction from message if metadata is weak
-            if (!dateFilter && userMessage.toLowerCase().includes('aprel')) dateFilter = '.04';
-            if (!dateFilter && userMessage.toLowerCase().includes('may')) dateFilter = '.05';
+            // Dynamic month detection from user message
+            const msgLower = userMessage.toLowerCase();
+            const monthMap = {
+                'yanvar': '.01', 'fevral': '.02', 'mart': '.03', 'aprel': '.04',
+                'may': '.05', 'iyun': '.06', 'iyul': '.07', 'avqust': '.08',
+                'sentyabr': '.09', 'oktyabr': '.10', 'noyabr': '.11', 'dekabr': '.12'
+            };
+
+            if (!dateFilter) {
+                // "bu ay" = this month, "gələn ay" / "gelen ay" = next month
+                if (msgLower.includes('bu ay')) {
+                    const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
+                    dateFilter = `.${currentMonth}`;
+                } else if (msgLower.includes('gələn ay') || msgLower.includes('gelen ay')) {
+                    let nextMonth = new Date().getMonth() + 2;
+                    if (nextMonth > 12) nextMonth = 1;
+                    dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
+                } else {
+                    // Check for month names
+                    for (const [name, code] of Object.entries(monthMap)) {
+                        if (msgLower.includes(name)) {
+                            dateFilter = code;
+                            break;
+                        }
+                    }
+                }
+            }
 
             log('AI ACTION', `Date: ${dateFilter}, Name: ${nameFilter}`);
 
