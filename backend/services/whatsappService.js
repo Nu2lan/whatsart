@@ -85,246 +85,246 @@ const initializeWhatsApp = async () => {
                         }
                     });
                 }
-            } catch (e) {}
+            } catch (e) { }
         };
 
-    client.on('qr', (qr) => {
-        currentQR = qr;
-        wStatus = 'WAITING_FOR_SCAN';
-        broadcastStatus();
-        // Try to hook into puppeteer page after first QR
-        setupNavigationListener();
-    });
-
-    client.on('authenticated', () => {
-        console.log('WhatsApp Client Authenticated!');
-        if (wStatus !== 'READY') {
-            wStatus = 'AUTHENTICATING';
-            currentQR = '';
+        client.on('qr', (qr) => {
+            currentQR = qr;
+            wStatus = 'WAITING_FOR_SCAN';
             broadcastStatus();
-        }
-    });
+            // Try to hook into puppeteer page after first QR
+            setupNavigationListener();
+        });
 
-    client.on('remote_session_saved', () => {
-        console.log('✅ WhatsApp session saved to MongoDB (will survive redeployments)');
-    });
+        client.on('authenticated', () => {
+            console.log('WhatsApp Client Authenticated!');
+            if (wStatus !== 'READY') {
+                wStatus = 'AUTHENTICATING';
+                currentQR = '';
+                broadcastStatus();
+            }
+        });
 
-    client.on('loading_screen', (percent, message) => {
-        console.log('LOADING SCREEN', percent, message);
-        if (wStatus !== 'READY') {
-            wStatus = 'AUTHENTICATING';
+        client.on('remote_session_saved', () => {
+            console.log('✅ WhatsApp session saved to MongoDB (will survive redeployments)');
+        });
+
+        client.on('loading_screen', (percent, message) => {
+            console.log('LOADING SCREEN', percent, message);
+            if (wStatus !== 'READY') {
+                wStatus = 'AUTHENTICATING';
+                currentQR = '';
+                broadcastStatus();
+            }
+        });
+
+        client.on('ready', async () => {
+            console.log('WhatsApp Client is Ready!');
+            isReady = true;
             currentQR = '';
+            wStatus = 'READY';
+
+            // Get current user's phone number BEFORE broadcasting
+            currentPhoneNumber = client.info.wid._serialized;
+            currentUserName = client.info.pushname || '';
+            console.log(`Logged in as: ${currentUserName} (${currentPhoneNumber})`);
             broadcastStatus();
-        }
-    });
 
-    client.on('ready', async () => {
-        console.log('WhatsApp Client is Ready!');
-        isReady = true;
-        currentQR = '';
-        wStatus = 'READY';
+            // Run heavy background tasks without blocking the 'ready' event broadcast
+            const runBackgroundSync = async () => {
+                // Upsert user in database
+                try {
+                    const User = require('../models/User');
+                    await User.updateOne(
+                        { phoneNumber: currentPhoneNumber },
+                        { $set: { name: currentUserName, lastLogin: new Date() } },
+                        { upsert: true }
+                    );
+                    console.log(`User upserted: ${currentPhoneNumber}`);
+                } catch (e) {
+                    console.error('User upsert error:', e.message);
+                }
 
-        // Get current user's phone number BEFORE broadcasting
-        currentPhoneNumber = client.info.wid._serialized;
-        currentUserName = client.info.pushname || '';
-        console.log(`Logged in as: ${currentUserName} (${currentPhoneNumber})`);
-        broadcastStatus();
+                try {
+                    console.log('Orphaned data migration...');
+                    const Contact = require('../models/Contact');
+                    const Campaign = require('../models/Campaign');
+                    const Message = require('../models/Message');
 
-        // Run heavy background tasks without blocking the 'ready' event broadcast
-        const runBackgroundSync = async () => {
-            // Upsert user in database
+                    await Contact.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
+                    await Campaign.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
+                    await Message.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
+                } catch (mErr) {
+                    console.error('Migration error:', mErr.message);
+                }
+
+                try {
+                    console.log('Avto-sinxronizasiya başladılır...');
+                    const Contact = require('../models/Contact');
+                    const contacts = await client.getContacts();
+                    const myContacts = contacts.filter(c => c.isUser && c.isMyContact && c.name);
+
+                    let addedCount = 0;
+                    let updatedCount = 0;
+
+                    // Collect valid phone numbers from WhatsApp
+                    const validPhones = new Set();
+
+                    for (const c of myContacts.filter(c => c.id.server === 'c.us')) {
+                        const phone = c.number;
+                        if (!phone || phone === '0' || phone.length > 15) continue;
+                        validPhones.add(phone);
+                        try {
+                            const result = await Contact.updateOne(
+                                { phone, owner: currentPhoneNumber },
+                                { $set: { name: c.name, phone, owner: currentPhoneNumber } },
+                                { upsert: true }
+                            );
+                            if (result.upsertedCount > 0) addedCount++;
+                            else if (result.modifiedCount > 0) updatedCount++;
+                        } catch (e) {
+                            console.error('Insert error for phone', phone, ':', e.message);
+                        }
+                    }
+
+                    // Remove DB contacts that are no longer in WhatsApp contact list
+                    const staleResult = await Contact.deleteMany({
+                        owner: currentPhoneNumber,
+                        phone: { $nin: Array.from(validPhones) }
+                    });
+                    const removedCount = staleResult.deletedCount || 0;
+
+                    console.log(`Avto-sinxronizasiya bitdi. ${addedCount} yeni, ${updatedCount} yenilənən, ${removedCount} silinən kontakt.`);
+                } catch (error) {
+                    console.error('Kontaktların avtomatik sinxronizasiyasında xəta:', error);
+                }
+            };
+
+            runBackgroundSync();
+        });
+
+        client.on('disconnected', async () => {
+            console.log('WhatsApp Client was Disconnected!');
+            isReady = false;
+            currentQR = '';
+            wStatus = 'DISCONNECTED';
+            currentPhoneNumber = '';
+            currentUserName = '';
+            broadcastStatus();
+
+            // Destroy client but do NOT clear session automatically.
+            // This allows the session to persist across reloads/reconnects.
+            try { await client.destroy(); } catch (e) { }
+            setTimeout(() => initializeWhatsApp(), 2000);
+        });
+
+        client.on('message', async (message) => {
+            // We will process incoming messages here
+            console.log(`Received message from ${message.from}: ${message.body}`);
+
+            // Ignore status broadcasts or groups if preferred
+            if (message.from === 'status@broadcast' || message.from.includes('@g.us')) return;
+
             try {
-                const User = require('../models/User');
-                await User.updateOne(
-                    { phoneNumber: currentPhoneNumber },
-                    { $set: { name: currentUserName, lastLogin: new Date() } },
-                    { upsert: true }
-                );
-                console.log(`User upserted: ${currentPhoneNumber}`);
-            } catch (e) {
-                console.error('User upsert error:', e.message);
-            }
+                // GET REAL PHONE NUMBER (Removes @lid mask)
+                let realSender = message.from;
+                try {
+                    const contact = await message.getContact();
+                    if (contact && contact.number) {
+                        realSender = `${contact.number}@c.us`;
+                    }
+                } catch (err) {
+                    console.error('Nömrə əldə edilə bilmədi, raw istifadə edilir.', err);
+                }
 
-            try {
-                console.log('Orphaned data migration...');
-                const Contact = require('../models/Contact');
-                const Campaign = require('../models/Campaign');
-                const Message = require('../models/Message');
-                
-                await Contact.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
-                await Campaign.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
-                await Message.updateMany({ owner: { $exists: false } }, { $set: { owner: currentPhoneNumber } });
-            } catch (mErr) {
-                console.error('Migration error:', mErr.message);
-            }
+                const cleanMsg = message.body.trim().toLowerCase();
+                const session = SessionManager.get(realSender);
 
-            try {
-                console.log('Avto-sinxronizasiya başladılır...');
-                const Contact = require('../models/Contact');
-                const contacts = await client.getContacts();
-                const myContacts = contacts.filter(c => c.isUser && c.isMyContact && c.name);
+                let botReplyText = '';
+                let skipAI = false;
 
-                let addedCount = 0;
-                let updatedCount = 0;
+                // STEP 1: Handle Payment Method Selection
+                if (session.step === 'SELECTING_METHOD' && session.selectedEvent) {
+                    if (cleanMsg === '1' || cleanMsg.includes('iticket')) {
+                        botReplyText = `Buyurun, *${session.selectedEvent.title}* tamaşası üçün onlayn bilet linki:\n${session.selectedEvent.link}\n\nXoş seyirlər! 🎭`;
+                        SessionManager.clear(realSender);
+                        skipAI = true;
+                    } else if (cleanMsg === '2' || cleanMsg.includes('kassa') || cleanMsg.includes('teatr')) {
+                        botReplyText = `Təşəkkür edirik. Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
 
-                // Collect valid phone numbers from WhatsApp
-                const validPhones = new Set();
+                        // NOTIFY KASSA
+                        const kassaPhone = `${process.env.KASSA_PHONE || '994552131221'}@c.us`;
+                        const notifyMsg = `📢 **YENİ BİLET SİFARİŞİ (KASSA)**\n\n👤 Müştəri: ${realSender.replace('@c.us', '')}\n🎭 Tamaşa: *${session.selectedEvent.title}*\n📅 Tarix: ${session.selectedEvent.date}\n\nTeatrın kassasından bilet almaq istəyən var. Zəhmət olmasa əlaqə saxlayın.`;
 
-                for (const c of myContacts.filter(c => c.id.server === 'c.us')) {
-                    const phone = c.number;
-                    if (!phone || phone === '0' || phone.length > 15) continue;
-                    validPhones.add(phone);
-                    try {
-                        const result = await Contact.updateOne(
-                            { phone, owner: currentPhoneNumber },
-                            { $set: { name: c.name, phone, owner: currentPhoneNumber } },
-                            { upsert: true }
-                        );
-                        if (result.upsertedCount > 0) addedCount++;
-                        else if (result.modifiedCount > 0) updatedCount++;
-                    } catch (e) {
-                        console.error('Insert error for phone', phone, ':', e.message);
+                        try {
+                            await client.sendMessage(kassaPhone, notifyMsg);
+                        } catch (err) {
+                            console.error('Kassa bildirişi göndərilə bilmədi:', err.message);
+                        }
+
+                        SessionManager.clear(realSender);
+                        skipAI = true;
                     }
                 }
 
-                // Remove DB contacts that are no longer in WhatsApp contact list
-                const staleResult = await Contact.deleteMany({
-                    owner: currentPhoneNumber,
-                    phone: { $nin: Array.from(validPhones) }
+                // STEP 2: Handle Event Selection from List
+                if (!skipAI && session.lastEvents && session.lastEvents.length > 0) {
+                    // Check if user mentioned one of the show titles
+                    const matchedEvent = session.lastEvents.find(e =>
+                        cleanMsg.includes(e.title.toLowerCase()) ||
+                        (e.title.toLowerCase().split(' ').some(word => word.length > 3 && cleanMsg.includes(word)))
+                    );
+
+                    if (matchedEvent) {
+                        SessionManager.update(realSender, {
+                            step: 'SELECTING_METHOD',
+                            selectedEvent: matchedEvent
+                        });
+                        botReplyText = `*${matchedEvent.title}* tamaşasını seçdiniz. 👍\n\nBiletinizi hardan almaq istəyirsiniz?\n1. *iTicket* (Onlayn)\n2. *Teatrın kassasından*\n\nZəhmət olmasa seçiminiz qeyd edin.`;
+                        skipAI = true;
+                    }
+                }
+
+                // STEP 3: Fallback to AI (Normal search or other questions)
+                if (!skipAI) {
+                    const aiResult = await generateBotReply(message.body);
+                    botReplyText = aiResult.text;
+
+                    // If AI found events, store them in session
+                    if (aiResult.events && aiResult.events.length > 0) {
+                        SessionManager.update(realSender, {
+                            lastEvents: aiResult.events,
+                            step: 'SELECTING_EVENT'
+                        });
+                    }
+                }
+
+                const userMsgRecord = new Message({
+                    sender: realSender,
+                    receiver: client.info.wid._serialized,
+                    text: message.body,
+                    isBotReply: false,
+                    owner: currentPhoneNumber
                 });
-                const removedCount = staleResult.deletedCount || 0;
+                await userMsgRecord.save();
 
-                console.log(`Avto-sinxronizasiya bitdi. ${addedCount} yeni, ${updatedCount} yenilənən, ${removedCount} silinən kontakt.`);
+                // Send reply
+                await client.sendMessage(message.from, botReplyText);
+
+                // Save bot reply
+                const botMsg = new Message({
+                    sender: client.info.wid._serialized,
+                    receiver: realSender,
+                    text: botReplyText,
+                    isBotReply: true,
+                    owner: currentPhoneNumber
+                });
+                await botMsg.save();
+
             } catch (error) {
-                console.error('Kontaktların avtomatik sinxronizasiyasında xəta:', error);
+                console.error('Error handling incoming message:', error);
             }
-        };
-
-        runBackgroundSync();
-    });
-
-    client.on('disconnected', async () => {
-        console.log('WhatsApp Client was Disconnected!');
-        isReady = false;
-        currentQR = '';
-        wStatus = 'DISCONNECTED';
-        currentPhoneNumber = '';
-        currentUserName = '';
-        broadcastStatus();
-        
-        // Destroy client but do NOT clear session automatically.
-        // This allows the session to persist across reloads/reconnects.
-        try { await client.destroy(); } catch (e) {}
-        setTimeout(() => initializeWhatsApp(), 2000);
-    });
-
-    client.on('message', async (message) => {
-        // We will process incoming messages here
-        console.log(`Received message from ${message.from}: ${message.body}`);
-
-        // Ignore status broadcasts or groups if preferred
-        if (message.from === 'status@broadcast' || message.from.includes('@g.us')) return;
-
-        try {
-            // GET REAL PHONE NUMBER (Removes @lid mask)
-            let realSender = message.from;
-            try {
-                const contact = await message.getContact();
-                if (contact && contact.number) {
-                    realSender = `${contact.number}@c.us`;
-                }
-            } catch (err) {
-                console.error('Nömrə əldə edilə bilmədi, raw istifadə edilir.', err);
-            }
-
-            const cleanMsg = message.body.trim().toLowerCase();
-            const session = SessionManager.get(realSender);
-
-            let botReplyText = '';
-            let skipAI = false;
-
-            // STEP 1: Handle Payment Method Selection
-            if (session.step === 'SELECTING_METHOD' && session.selectedEvent) {
-                if (cleanMsg === '1' || cleanMsg.includes('iticket')) {
-                    botReplyText = `Buyurun, *${session.selectedEvent.title}* tamaşası üçün onlayn bilet linki:\n${session.selectedEvent.link}\n\nXoş seyirlər! 🎭`;
-                    SessionManager.clear(realSender);
-                    skipAI = true;
-                } else if (cleanMsg === '2' || cleanMsg.includes('kassa') || cleanMsg.includes('teatr')) {
-                    botReplyText = `Təşəkkür edirik. Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
-                    
-                    // NOTIFY KASSA
-                    const kassaPhone = `${process.env.KASSA_PHONE || '994552131221'}@c.us`;
-                    const notifyMsg = `📢 **YENİ BİLET SİFARİŞİ (KASSA)**\n\n👤 Müştəri: ${realSender.replace('@c.us', '')}\n🎭 Tamaşa: *${session.selectedEvent.title}*\n📅 Tarix: ${session.selectedEvent.date}\n\nTeatrın kassasından bilet almaq istəyən var. Zəhmət olmasa əlaqə saxlayın.`;
-                    
-                    try {
-                        await client.sendMessage(kassaPhone, notifyMsg);
-                    } catch (err) {
-                        console.error('Kassa bildirişi göndərilə bilmədi:', err.message);
-                    }
-
-                    SessionManager.clear(realSender);
-                    skipAI = true;
-                }
-            }
-
-            // STEP 2: Handle Event Selection from List
-            if (!skipAI && session.lastEvents && session.lastEvents.length > 0) {
-                // Check if user mentioned one of the show titles
-                const matchedEvent = session.lastEvents.find(e => 
-                    cleanMsg.includes(e.title.toLowerCase()) || 
-                    (e.title.toLowerCase().split(' ').some(word => word.length > 3 && cleanMsg.includes(word)))
-                );
-
-                if (matchedEvent) {
-                    SessionManager.update(realSender, {
-                        step: 'SELECTING_METHOD',
-                        selectedEvent: matchedEvent
-                    });
-                    botReplyText = `*${matchedEvent.title}* tamaşasını seçdiniz. 👍\n\nBiletinizi hardan almaq istəyirsiniz?\n1. **iTicket** (Onlayn)\n2. **Teatrın kassasından**\n\nZəhmət olmasa seçiminiz qeyd edin.`;
-                    skipAI = true;
-                }
-            }
-
-            // STEP 3: Fallback to AI (Normal search or other questions)
-            if (!skipAI) {
-                const aiResult = await generateBotReply(message.body);
-                botReplyText = aiResult.text;
-                
-                // If AI found events, store them in session
-                if (aiResult.events && aiResult.events.length > 0) {
-                    SessionManager.update(realSender, {
-                        lastEvents: aiResult.events,
-                        step: 'SELECTING_EVENT'
-                    });
-                }
-            }
-
-            const userMsgRecord = new Message({
-                sender: realSender,
-                receiver: client.info.wid._serialized,
-                text: message.body,
-                isBotReply: false,
-                owner: currentPhoneNumber
-            });
-            await userMsgRecord.save();
-
-            // Send reply
-            await client.sendMessage(message.from, botReplyText);
-
-            // Save bot reply
-            const botMsg = new Message({
-                sender: client.info.wid._serialized,
-                receiver: realSender,
-                text: botReplyText,
-                isBotReply: true,
-                owner: currentPhoneNumber
-            });
-            await botMsg.save();
-
-        } catch (error) {
-            console.error('Error handling incoming message:', error);
-        }
-    });
+        });
 
         client.initialize().catch(err => {
             console.error('WhatsApp initialization failed (often due to context reload). Attempting restart in 5 seconds...', err.message);
@@ -381,9 +381,9 @@ const getDeviceChats = async () => {
             console.error('getDeviceChats failed: Client or Page not ready');
             throw new Error('WhatsApp Client is not ready');
         }
-        
+
         log('DEBUG', 'Fetching chats (defensive)...');
-        
+
         // Fetch chats with a timeout
         const chats = await Promise.race([
             client.getChats(),
@@ -404,7 +404,7 @@ const getDeviceChats = async () => {
                 // Defensive name resolution
                 let realPhone = c.id.user;
                 let contactName = c.name || '';
-                
+
                 // Try quick contact resolution (3s timeout)
                 try {
                     const contact = await Promise.race([
@@ -416,7 +416,7 @@ const getDeviceChats = async () => {
                         if (contact.number) realPhone = contact.number;
                         contactName = contact.name || contact.pushname || contactName;
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 if (!realPhone || realPhone === '0') continue;
 
@@ -692,18 +692,18 @@ const logoutWhatsApp = async () => {
             } catch (e) {
                 console.log('Logout already requested or frame detached, proceeding to destroy.');
             }
-            
+
             try {
                 await client.destroy();
             } catch (e) {
                 console.log('Destroy failed or already closed.');
             }
         }
-        
+
         // Ensure browser fully terminates before clearing files (especially on Windows)
         console.log('Waiting 2 seconds for browser processes to exit...');
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         isReady = false;
         currentQR = '';
         wStatus = 'DISCONNECTED';
@@ -722,7 +722,7 @@ const logoutWhatsApp = async () => {
         currentPhoneNumber = '';
         currentUserName = '';
         broadcastStatus();
-        
+
         await clearSession();
         initializeWhatsApp();
         return { success: true };

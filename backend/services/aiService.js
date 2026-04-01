@@ -58,7 +58,7 @@ const generateBotReply = async (userMessage) => {
         }
 
         const hasSearchTrigger = responseText.includes('[TARGET:');
-        
+
         if (hasSearchTrigger) {
             const dateMatch = responseText.match(/\[DATE:\s*([^\]]+)\]/i);
             const nameMatch = responseText.match(/\[NAME:\s*([^\]]+)\]/i);
@@ -91,18 +91,18 @@ const generateBotReply = async (userMessage) => {
 
             if (events && events.length > 0) {
                 // Sort by date
-                events.sort((a,b) => {
+                events.sort((a, b) => {
                     const d1 = a.date.split(' ')[0].split('.').reverse().join('');
                     const d2 = b.date.split(' ')[0].split('.').reverse().join('');
                     return d1.localeCompare(d2);
                 });
 
-                let msg = `🎭 **Azərbaycan Dövlət Akademik Musiqili Teatrında tamaşalar:**\n\n`;
+                let msg = `🎭 *Azərbaycan Dövlət Akademik Musiqili Teatrında tamaşalar:*\n\n`;
                 events.forEach(e => {
                     msg += `⭐ *${e.title}*\n📅 Tarix: ${e.date}\n💰 Qiymət: ${e.price}\n\n`;
                 });
                 msg += "Hansı tamaşa üçün bilet almaq istəyirsiniz? 🎟️";
-                
+
                 // We'll pass the events to the caller so they can be saved in the session
                 return { text: msg, events: events };
             } else {
