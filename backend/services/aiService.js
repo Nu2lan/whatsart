@@ -61,6 +61,7 @@ const generateBotReply = async (userMessage) => {
 
         const hasSearchTrigger = responseText.includes('[TARGET:');
 
+
         if (hasSearchTrigger) {
             const dateMatch = responseText.match(/\[DATE:\s*([^\]]+)\]/i);
             const nameMatch = responseText.match(/\[NAME:\s*([^\]]+)\]/i);
@@ -76,28 +77,32 @@ const generateBotReply = async (userMessage) => {
                 'sentyabr': '.09', 'oktyabr': '.10', 'noyabr': '.11', 'dekabr': '.12'
             };
 
-            // Normalize GPT's dateFilter (it might say "aprel" instead of ".04")
-            if (dateFilter) {
-                const normalized = monthMap[dateFilter.toLowerCase()];
-                if (normalized) dateFilter = normalized;
+            // PRIORITY 1: User's explicit relative month ("bu ay", "gələn ay") ALWAYS wins
+            if (msgLower.includes('bu ay')) {
+                const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
+                dateFilter = `.${currentMonth}`;
+            } else if (msgLower.includes('gələn ay') || msgLower.includes('gelen ay')) {
+                let nextMonth = new Date().getMonth() + 2;
+                if (nextMonth > 12) nextMonth = 1;
+                dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
             }
-
-            // If still no valid date filter, detect from user message
-            if (!dateFilter || (!dateFilter.startsWith('.') && !dateFilter.match(/^\d{2}\.\d{2}$/))) {
-                dateFilter = null; // Reset invalid filter
-                if (msgLower.includes('bu ay')) {
-                    const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
-                    dateFilter = `.${currentMonth}`;
-                } else if (msgLower.includes('gələn ay') || msgLower.includes('gelen ay')) {
-                    let nextMonth = new Date().getMonth() + 2;
-                    if (nextMonth > 12) nextMonth = 1;
-                    dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
-                } else {
-                    for (const [name, code] of Object.entries(monthMap)) {
-                        if (msgLower.includes(name)) {
-                            dateFilter = code;
-                            break;
-                        }
+            // PRIORITY 2: User's explicit month name
+            else {
+                let userMonthFound = false;
+                for (const [name, code] of Object.entries(monthMap)) {
+                    if (msgLower.includes(name)) {
+                        dateFilter = code;
+                        userMonthFound = true;
+                        break;
+                    }
+                }
+                // PRIORITY 3: GPT's date tag (normalize if it's a month name)
+                if (!userMonthFound && dateFilter) {
+                    const normalized = monthMap[dateFilter.toLowerCase()];
+                    if (normalized) dateFilter = normalized;
+                    // If GPT gave something invalid, discard it
+                    if (!dateFilter.startsWith('.') && !dateFilter.match(/^\d{2}\.\d{2}$/)) {
+                        dateFilter = null;
                     }
                 }
             }
@@ -106,13 +111,16 @@ const generateBotReply = async (userMessage) => {
 
             let events = await searchITicket('musical_theatre_venue');
 
+
             // Apply Date/Month Filter
             if (dateFilter && events.length > 0) {
+
                 if (dateFilter.startsWith('.')) {
                     events = events.filter(e => e.date.includes(dateFilter));
                 } else {
                     events = events.filter(e => e.date.trim().startsWith(dateFilter.trim()));
                 }
+
             }
 
             // Apply Name Filter (Tamaşa adı)
