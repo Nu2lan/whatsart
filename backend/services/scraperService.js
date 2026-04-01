@@ -86,7 +86,7 @@ const searchITicket = async (target) => {
                 const eventDate = `${day}.${month}.${year} ${hours}:${minutes}`;
 
                 // Define link and price
-                const eventLink = `https://iticket.az/events/${item.category?.slug || 'concerts'}/${item.slug}`;
+                const eventLink = `https://iticket.az/events/${item.category?.slug || 'theatre'}/${item.slug}`;
                 let priceText = 'Qiymət qeyd olunmayıb';
                 if (item.min_price) {
                     priceText = item.max_price && item.min_price !== item.max_price 
