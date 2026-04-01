@@ -253,8 +253,8 @@ const initializeWhatsApp = async () => {
                         botReplyText = `Təşəkkür edirik. Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
 
                         // NOTIFY KASSA
-                        const kassaPhone = `${process.env.KASSA_PHONE || '994552131221'}@c.us`;
-                        const notifyMsg = `📢 **YENİ BİLET SİFARİŞİ (KASSA)**\n\n👤 Müştəri: ${realSender.replace('@c.us', '')}\n🎭 Tamaşa: *${session.selectedEvent.title}*\n📅 Tarix: ${session.selectedEvent.date}\n\nTeatrın kassasından bilet almaq istəyən var. Zəhmət olmasa əlaqə saxlayın.`;
+                        const kassaPhone = `${process.env.KASSA_PHONE}@c.us`;
+                        const notifyMsg = `📢 *YENİ BİLET SİFARİŞİ (KASSA)*\n\n👤 Müştəri: +${realSender.replace('@c.us', '')}\n🎭 Tamaşa: *${session.selectedEvent.title}*\n📅 Tarix: ${session.selectedEvent.date}\n\nTeatrın kassasından bilet almaq istəyən var. Zəhmət olmasa əlaqə saxlayın.`;
 
                         try {
                             await client.sendMessage(kassaPhone, notifyMsg);
