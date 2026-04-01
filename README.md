@@ -189,7 +189,7 @@ The project is configured for **single-service Railway deployment** where the ba
 
 ## 📄 License
 
-This project is proprietary software developed for Azərbaycan Dövlət Akademik Musiqili Teatrı.
+This project is proprietary software.
 
 ---
 
