@@ -86,7 +86,7 @@ const searchITicket = async (target) => {
                 const eventDate = `${day}.${month}.${year} ${hours}:${minutes}`;
 
                 // Define link and price
-                const eventLink = `https://iticket.az/events/${item.category?.slug || 'theatre'}/${item.slug}`;
+                const eventLink = `https://iticket.az/events/${item.category_slug || 'theatre'}/${item.slug}`;
                 let priceText = 'Qiymət qeyd olunmayıb';
                 if (item.min_price) {
                     priceText = item.max_price && item.min_price !== item.max_price 
@@ -103,7 +103,7 @@ const searchITicket = async (target) => {
                     minPrice: item.min_price || 0,
                     maxPrice: item.max_price || item.min_price || 0,
                     link: eventLink,
-                    category: item.category?.name || 'Digər'
+                    category: item.category_slug || 'other'
                 });
             }
         });
