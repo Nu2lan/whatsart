@@ -68,7 +68,7 @@ const generateBotReply = async (userMessage) => {
             let dateFilter = dateMatch ? dateMatch[1].trim() : null;
             const nameFilter = nameMatch ? nameMatch[1].trim().toLowerCase() : null;
 
-            // Dynamic month detection from user message
+            // Dynamic month detection
             const msgLower = userMessage.toLowerCase();
             const monthMap = {
                 'yanvar': '.01', 'fevral': '.02', 'mart': '.03', 'aprel': '.04',
@@ -76,8 +76,15 @@ const generateBotReply = async (userMessage) => {
                 'sentyabr': '.09', 'oktyabr': '.10', 'noyabr': '.11', 'dekabr': '.12'
             };
 
-            if (!dateFilter) {
-                // "bu ay" = this month, "gələn ay" / "gelen ay" = next month
+            // Normalize GPT's dateFilter (it might say "aprel" instead of ".04")
+            if (dateFilter) {
+                const normalized = monthMap[dateFilter.toLowerCase()];
+                if (normalized) dateFilter = normalized;
+            }
+
+            // If still no valid date filter, detect from user message
+            if (!dateFilter || (!dateFilter.startsWith('.') && !dateFilter.match(/^\d{2}\.\d{2}$/))) {
+                dateFilter = null; // Reset invalid filter
                 if (msgLower.includes('bu ay')) {
                     const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
                     dateFilter = `.${currentMonth}`;
@@ -86,7 +93,6 @@ const generateBotReply = async (userMessage) => {
                     if (nextMonth > 12) nextMonth = 1;
                     dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
                 } else {
-                    // Check for month names
                     for (const [name, code] of Object.entries(monthMap)) {
                         if (msgLower.includes(name)) {
                             dateFilter = code;

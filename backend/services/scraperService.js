@@ -110,12 +110,17 @@ const searchITicket = async (target) => {
 
         // HARD FILTER: If specifically searching for Musical Theatre, filter results precisely
         if (target.toLowerCase() === 'musical_theatre_venue') {
+            // Debug: log unique venue names to find the correct filter
+            const uniqueVenues = [...new Set(events.map(e => e.venue))];
+            log('SCRAPER VENUES', `Found ${events.length} total events. Unique venues: ${uniqueVenues.join(' | ')}`);
+
             const filteredEvents = events.filter(e => 
                 e.venue.includes('Akademik Musiqili') || 
                 e.venue.includes('Musical Theatre') ||
                 e.venue.includes('Musiqili Teatr') ||
                 e.venue.includes('Akademik Musiqi')
             );
+            log('SCRAPER FILTER', `After venue filter: ${filteredEvents.length} events`);
             return filteredEvents;
         }
 
