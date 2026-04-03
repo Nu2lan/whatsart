@@ -269,25 +269,46 @@ const initializeWhatsApp = async () => {
 
                 // STEP 2: Handle Event Selection from List
                 if (!skipAI && session.lastEvents && session.lastEvents.length > 0) {
-                    // Clean title for comparison (remove quotes and special chars)
-                    const cleanTitle = (t) => t.toLowerCase().replace(/["""''«»]/g, '').trim();
-                    const matchedEvent = session.lastEvents.find(e => {
-                        const title = cleanTitle(e.title);
-                        // Full title match
-                        if (cleanMsg.includes(title)) return true;
-                        // Any word from title (3+ chars) found in user message
-                        if (title.split(/[\s\-]+/).some(word => word.length > 2 && cleanMsg.includes(word))) return true;
-                        // Any word from user message (3+ chars) found in title
-                        if (cleanMsg.split(/[\s\-]+/).some(word => word.length > 2 && title.includes(word))) return true;
-                        return false;
-                    });
+                    const cleanText = (t) => t.toLowerCase().replace(/["""''«».,!?]/g, '').trim();
+                    const msgWords = cleanText(cleanMsg).split(/[\s\-]+/).filter(w => w.length > 2);
 
-                    if (matchedEvent) {
+                    let bestMatch = null;
+                    let bestScore = 0;
+
+                    for (const e of session.lastEvents) {
+                        const title = cleanText(e.title);
+                        const titleWords = title.split(/[\s\-]+/).filter(w => w.length > 2);
+                        let score = 0;
+
+                        // Full title in message = instant high score
+                        if (cleanMsg.includes(title)) {
+                            score = 100;
+                        } else {
+                            // Count whole-word matches (not substring)
+                            for (const mw of msgWords) {
+                                for (const tw of titleWords) {
+                                    // Exact word match or one starts with the other (for suffixed words like "kralsanı" → "kralsan")
+                                    if (mw === tw) {
+                                        score += 10;
+                                    } else if ((mw.length >= 4 && tw.startsWith(mw)) || (tw.length >= 4 && mw.startsWith(tw))) {
+                                        score += 8;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMatch = e;
+                        }
+                    }
+
+                    if (bestMatch && bestScore >= 8) {
                         SessionManager.update(realSender, {
                             step: 'SELECTING_METHOD',
-                            selectedEvent: matchedEvent
+                            selectedEvent: bestMatch
                         });
-                        botReplyText = `*${matchedEvent.title}* tamaşasını seçdiniz. 👍\n\nBiletinizi hardan almaq istəyirsiniz?\n1. *iTicket* (Onlayn)\n2. *Teatrın kassasından*\n\nZəhmət olmasa seçiminiz qeyd edin.`;
+                        botReplyText = `*${bestMatch.title}* tamaşasını seçdiniz. 👍\n\nBiletinizi hardan almaq istəyirsiniz?\n1. *iTicket* (Onlayn)\n2. *Teatrın kassasından*\n\nZəhmət olmasa seçiminiz qeyd edin.`;
                         skipAI = true;
                     }
                 }

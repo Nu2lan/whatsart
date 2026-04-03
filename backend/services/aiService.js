@@ -77,32 +77,51 @@ const generateBotReply = async (userMessage) => {
                 'sentyabr': '.09', 'oktyabr': '.10', 'noyabr': '.11', 'dekabr': '.12'
             };
 
-            // PRIORITY 1: User's explicit relative month ("bu ay", "gələn ay") ALWAYS wins
-            if (msgLower.includes('bu ay')) {
-                const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
-                dateFilter = `.${currentMonth}`;
-            } else if (msgLower.includes('gələn ay') || msgLower.includes('gelen ay')) {
-                let nextMonth = new Date().getMonth() + 2;
-                if (nextMonth > 12) nextMonth = 1;
-                dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
-            }
-            // PRIORITY 2: User's explicit month name
-            else {
-                let userMonthFound = false;
-                for (const [name, code] of Object.entries(monthMap)) {
-                    if (msgLower.includes(name)) {
-                        dateFilter = code;
-                        userMonthFound = true;
-                        break;
-                    }
+            // PRIORITY 0: Specific date with day + month (e.g. "24 aprel" or "aprel 24")
+            let specificDateFound = false;
+            for (const [name, code] of Object.entries(monthMap)) {
+                // Pattern: "24 aprel" or "24-ci aprel"
+                const dayBeforeMonth = msgLower.match(new RegExp(`(\\d{1,2})(?:\\s*-?\\s*c[iı])?\\s+${name}`));
+                // Pattern: "aprel 24" or "aprelin 24"
+                const dayAfterMonth = msgLower.match(new RegExp(`${name}(?:in)?\\s+(\\d{1,2})`));
+                
+                const dayMatch = dayBeforeMonth || dayAfterMonth;
+                if (dayMatch) {
+                    const day = dayMatch[1].padStart(2, '0');
+                    const month = code.replace('.', '');
+                    dateFilter = `${day}.${month}`;
+                    specificDateFound = true;
+                    break;
                 }
-                // PRIORITY 3: GPT's date tag (normalize if it's a month name)
-                if (!userMonthFound && dateFilter) {
-                    const normalized = monthMap[dateFilter.toLowerCase()];
-                    if (normalized) dateFilter = normalized;
-                    // If GPT gave something invalid, discard it
-                    if (!dateFilter.startsWith('.') && !dateFilter.match(/^\d{2}\.\d{2}$/)) {
-                        dateFilter = null;
+            }
+
+            if (!specificDateFound) {
+                // PRIORITY 1: User's explicit relative month ("bu ay", "gələn ay") ALWAYS wins
+                if (msgLower.includes('bu ay')) {
+                    const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
+                    dateFilter = `.${currentMonth}`;
+                } else if (msgLower.includes('gələn ay') || msgLower.includes('gelen ay')) {
+                    let nextMonth = new Date().getMonth() + 2;
+                    if (nextMonth > 12) nextMonth = 1;
+                    dateFilter = `.${nextMonth.toString().padStart(2, '0')}`;
+                }
+                // PRIORITY 2: User's explicit month name (without day)
+                else {
+                    let userMonthFound = false;
+                    for (const [name, code] of Object.entries(monthMap)) {
+                        if (msgLower.includes(name)) {
+                            dateFilter = code;
+                            userMonthFound = true;
+                            break;
+                        }
+                    }
+                    // PRIORITY 3: GPT's date tag (normalize if it's a month name)
+                    if (!userMonthFound && dateFilter) {
+                        const normalized = monthMap[dateFilter.toLowerCase()];
+                        if (normalized) dateFilter = normalized;
+                        if (!dateFilter.startsWith('.') && !dateFilter.match(/^\d{2}\.\d{2}$/)) {
+                            dateFilter = null;
+                        }
                     }
                 }
             }
