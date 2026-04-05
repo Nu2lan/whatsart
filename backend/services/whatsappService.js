@@ -243,36 +243,130 @@ const initializeWhatsApp = async () => {
                 let botReplyText = '';
                 let skipAI = false;
 
+                // Helper: Send notification to kassa/staff
+                const notifyStaff = async (reason) => {
+                    const kassaPhone = `${process.env.KASSA_PHONE}@c.us`;
+                    const notifyMsg = `📢 *YENİ MÜRACİƏT*\n\n👤 Müştəri: +${realSender.replace('@c.us', '')}\n📋 Mövzu: ${reason}\n\nZəhmət olmasa əlaqə saxlayın.`;
+                    try {
+                        await client.sendMessage(kassaPhone, notifyMsg);
+                    } catch (err) {
+                        console.error('Bildiriş göndərilə bilmədi:', err.message);
+                    }
+                };
+
+                // ═══════════════════════════════════════════
                 // STEP 0: If human took over this chat, bot stays silent
+                // ═══════════════════════════════════════════
                 if (session.step === 'HUMAN_TAKEOVER') {
-                    return; // Do not respond at all
+                    return;
                 }
 
-                // STEP 1: Handle Payment Method Selection
-                if (session.step === 'SELECTING_METHOD' && session.selectedEvent) {
+                // ═══════════════════════════════════════════
+                // STEP 1: First message → Show greeting menu
+                // ═══════════════════════════════════════════
+                if (session.step === 'IDLE') {
+                    botReplyText = `Salam, hörmətli tamaşaçı! 🎭\nSizi *Azərbaycan Dövlət Akademik Musiqili Teatrı* adından salamlayırıq.\n\nZəhmət olmasa, aşağıdakı seçimlərdən birini qeyd edin:\n\n1️⃣ Aylıq repertuar haqqında məlumat\n2️⃣ Biletləri haradan əldə edə bilərəm?\n3️⃣ Kütləvi bilet alışı və endirimlər barədə məlumat\n4️⃣ Teatrın ünvanı haqqında məlumat\n5️⃣ Teatr və tamaşalar barədə ümumi məlumat\n6️⃣ Digər\n\nSualınızı seçdiyiniz üçün təşəkkür edirik! Sizə məmnuniyyətlə kömək edəcəyik. 😊`;
+                    SessionManager.update(realSender, { step: 'AWAITING_MENU' });
+                    skipAI = true;
+                }
+
+                // ═══════════════════════════════════════════
+                // STEP 2: Handle Menu Selection (1-6)
+                // ═══════════════════════════════════════════
+                if (!skipAI && session.step === 'AWAITING_MENU') {
+                    // Option 1: Monthly repertoire
+                    if (cleanMsg === '1' || cleanMsg.includes('repertuar')) {
+                        const aiResult = await generateBotReply('bu ay hansı tamaşalar var');
+                        botReplyText = aiResult.text;
+                        if (aiResult.events && aiResult.events.length > 0) {
+                            SessionManager.update(realSender, {
+                                lastEvents: aiResult.events,
+                                step: 'SELECTING_EVENT'
+                            });
+                        }
+                        skipAI = true;
+                    }
+                    // Option 2: Where to buy tickets
+                    else if (cleanMsg === '2' || cleanMsg.includes('bilet') && cleanMsg.includes('hara')) {
+                        botReplyText = `Biletləri şəhərin bütün mərkəzləşdirilmiş kassalarından, *"ASAN xidmət"* mərkəzlərindən, eləcə də *iticket.az* saytından əldə etmək olar.\n\nƏlavə olaraq WhatsApp üzərindən online kassadan da ala bilərsiniz.`;
+                        SessionManager.update(realSender, { step: 'AWAITING_FOLLOWUP' });
+                        skipAI = true;
+                    }
+                    // Option 3: Bulk tickets & discounts
+                    else if (cleanMsg === '3' || cleanMsg.includes('kütləvi') || cleanMsg.includes('endirim')) {
+                        botReplyText = `Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
+                        await notifyStaff('Kütləvi bilet alışı və endirimlər');
+                        SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER' });
+                        skipAI = true;
+                    }
+                    // Option 4: Theatre address
+                    else if (cleanMsg === '4' || cleanMsg.includes('ünvan') || cleanMsg.includes('adres')) {
+                        botReplyText = `📍 *Azərbaycan Dövlət Akademik Musiqili Teatrı*\n\n🏠 Ünvan: Bakı şəhəri, Zərifə Əliyeva küç. 8\n🚇 Sahil metrosunun yaxınlığı\n\n📌 Google Maps: https://maps.app.goo.gl/niPHaCf95CZ2jKUh6`;
+                        SessionManager.update(realSender, { step: 'AWAITING_FOLLOWUP' });
+                        skipAI = true;
+                    }
+                    // Option 5: General info about theatre
+                    else if (cleanMsg === '5' || cleanMsg.includes('ümumi')) {
+                        botReplyText = `Teatr və tamaşalarla bağlı məlumatı rəsmi saytımızdan əldə edə bilərsiniz:\n🌐 https://musiqiliteatr.az/`;
+                        SessionManager.update(realSender, { step: 'AWAITING_FOLLOWUP' });
+                        skipAI = true;
+                    }
+                    // Option 6: Other
+                    else if (cleanMsg === '6' || cleanMsg.includes('digər')) {
+                        botReplyText = `Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
+                        await notifyStaff('Digər sual');
+                        SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER' });
+                        skipAI = true;
+                    }
+                    // Invalid selection → repeat menu
+                    else {
+                        botReplyText = `Zəhmət olmasa 1-6 arasında rəqəm seçin:
+
+1️⃣ Aylıq repertuar haqqında məlumat
+2️⃣ Biletləri haradan əldə edə bilərəm?
+3️⃣ Kütləvi bilet alışı və endirimlər barədə məlumat
+4️⃣ Teatrın ünvanı haqqında məlumat
+5️⃣ Teatr və tamaşalar barədə ümumi məlumat
+6️⃣ Digər`;
+                        skipAI = true;
+                    }
+                }
+
+                // ═══════════════════════════════════════════
+                // STEP 3: Follow-up after options 2, 4, 5 → handoff to human
+                // ═══════════════════════════════════════════
+                if (!skipAI && session.step === 'AWAITING_FOLLOWUP') {
+                    botReplyText = `Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
+                    await notifyStaff('Əlavə sual (mövzu: müştəri əvvəlki cavabdan sonra yazdı)');
+                    SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER' });
+                    skipAI = true;
+                }
+
+                // ═══════════════════════════════════════════
+                // STEP 4: Handle Payment Method Selection (iTicket vs Kassa)
+                // ═══════════════════════════════════════════
+                if (!skipAI && session.step === 'SELECTING_METHOD' && session.selectedEvent) {
                     if (cleanMsg === '1' || cleanMsg.includes('iticket')) {
                         botReplyText = `Buyurun, *${session.selectedEvent.title}* tamaşası üçün onlayn bilet linki:\n${session.selectedEvent.link}\n\nXoş seyirlər! 🎭`;
                         SessionManager.clear(realSender);
                         skipAI = true;
                     } else if (cleanMsg === '2' || cleanMsg.includes('kassa') || cleanMsg.includes('teatr')) {
                         botReplyText = `Təşəkkür edirik. Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq. 😊`;
-
-                        // NOTIFY KASSA
                         const kassaPhone = `${process.env.KASSA_PHONE}@c.us`;
                         const notifyMsg = `📢 *YENİ BİLET SİFARİŞİ (KASSA)*\n\n👤 Müştəri: +${realSender.replace('@c.us', '')}\n🎭 Tamaşa: *${session.selectedEvent.title}*\n📅 Tarix: ${session.selectedEvent.date}\n\nTeatrın kassasından bilet almaq istəyən var. Zəhmət olmasa əlaqə saxlayın.`;
-
                         try {
                             await client.sendMessage(kassaPhone, notifyMsg);
                         } catch (err) {
                             console.error('Kassa bildirişi göndərilə bilmədi:', err.message);
                         }
-
                         SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER', lastEvents: [], selectedEvent: null });
                         skipAI = true;
                     }
                 }
 
-                // STEP 2: Handle Event Selection from List
+                // ═══════════════════════════════════════════
+                // STEP 5: Handle Event Selection from List
+                // ═══════════════════════════════════════════
                 if (!skipAI && session.lastEvents && session.lastEvents.length > 0) {
                     const cleanText = (t) => t.toLowerCase().replace(/["""''«».,!?]/g, '').trim();
                     const msgWords = cleanText(cleanMsg).split(/[\s\-]+/).filter(w => w.length > 2);
@@ -285,14 +379,11 @@ const initializeWhatsApp = async () => {
                         const titleWords = title.split(/[\s\-]+/).filter(w => w.length > 2);
                         let score = 0;
 
-                        // Full title in message = instant high score
                         if (cleanMsg.includes(title)) {
                             score = 100;
                         } else {
-                            // Count whole-word matches (not substring)
                             for (const mw of msgWords) {
                                 for (const tw of titleWords) {
-                                    // Exact word match or one starts with the other (for suffixed words like "kralsanı" → "kralsan")
                                     if (mw === tw) {
                                         score += 10;
                                     } else if ((mw.length >= 4 && tw.startsWith(mw)) || (tw.length >= 4 && mw.startsWith(tw))) {
@@ -318,12 +409,13 @@ const initializeWhatsApp = async () => {
                     }
                 }
 
-                // STEP 3: Fallback to AI (Normal search or other questions)
+                // ═══════════════════════════════════════════
+                // STEP 6: Fallback to AI
+                // ═══════════════════════════════════════════
                 if (!skipAI) {
                     const aiResult = await generateBotReply(message.body);
                     botReplyText = aiResult.text;
 
-                    // If AI found events, store them in session
                     if (aiResult.events && aiResult.events.length > 0) {
                         SessionManager.update(realSender, {
                             lastEvents: aiResult.events,
