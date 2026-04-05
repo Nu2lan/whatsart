@@ -243,6 +243,11 @@ const initializeWhatsApp = async () => {
                 let botReplyText = '';
                 let skipAI = false;
 
+                // STEP 0: If human took over this chat, bot stays silent
+                if (session.step === 'HUMAN_TAKEOVER') {
+                    return; // Do not respond at all
+                }
+
                 // STEP 1: Handle Payment Method Selection
                 if (session.step === 'SELECTING_METHOD' && session.selectedEvent) {
                     if (cleanMsg === '1' || cleanMsg.includes('iticket')) {
@@ -262,7 +267,7 @@ const initializeWhatsApp = async () => {
                             console.error('Kassa bildirişi göndərilə bilmədi:', err.message);
                         }
 
-                        SessionManager.clear(realSender);
+                        SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER', lastEvents: [], selectedEvent: null });
                         skipAI = true;
                     }
                 }
