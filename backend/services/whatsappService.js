@@ -218,6 +218,20 @@ const initializeWhatsApp = async () => {
             setTimeout(() => initializeWhatsApp(), 2000);
         });
 
+        // Detect when ADMIN sends a message → pause AI for that customer
+        client.on('message_create', async (message) => {
+            if (message.fromMe && !message.to.includes('@g.us') && message.to !== 'status@broadcast') {
+                const recipient = message.to;
+                if (recipient && recipient.includes('@c.us')) {
+                    const session = SessionManager.get(recipient);
+                    if (session.step !== 'HUMAN_TAKEOVER') {
+                        console.log(`[TAKEOVER] Admin sent message to ${recipient} — AI paused for 1 hour`);
+                    }
+                    SessionManager.update(recipient, { step: 'HUMAN_TAKEOVER' });
+                }
+            }
+        });
+
         client.on('message', async (message) => {
             // We will process incoming messages here
             console.log(`Received message from ${message.from}: ${message.body}`);
