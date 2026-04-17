@@ -29,7 +29,7 @@ const SessionManager = {
     // Periodically clear old sessions (e.g. older than 1 hour)
     cleanup: () => {
         const now = Date.now();
-        const timeout = 60 * 60 * 1000; // 1 hour
+        const timeout = 10 * 24 * 60 * 60 * 1000; // 10 days
         for (const [userId, session] of sessions.entries()) {
             if (now - session.lastInteraction > timeout) {
                 sessions.delete(userId);
