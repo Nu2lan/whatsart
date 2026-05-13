@@ -225,7 +225,7 @@ const initializeWhatsApp = async () => {
                 if (recipient && recipient.includes('@c.us')) {
                     const session = SessionManager.get(recipient);
                     if (session.step !== 'HUMAN_TAKEOVER') {
-                        console.log(`[TAKEOVER] Admin sent message to ${recipient} — AI paused for 1 hour`);
+                        console.log(`[TAKEOVER] Admin sent message to ${recipient} — AI suspended`);
                     }
                     SessionManager.update(recipient, { step: 'HUMAN_TAKEOVER' });
                 }
@@ -435,6 +435,12 @@ const initializeWhatsApp = async () => {
                             lastEvents: aiResult.events,
                             step: 'SELECTING_EVENT'
                         });
+                    }
+
+                    // If AI gave handoff response → notify staff + pause bot
+                    if (botReplyText.includes('Əməkdaşımız sizinlə tezliklə əlaqə saxlayacaq')) {
+                        await notifyStaff('Müştəri mövzudan kənar sual yazdı');
+                        SessionManager.update(realSender, { step: 'HUMAN_TAKEOVER' });
                     }
                 }
 
